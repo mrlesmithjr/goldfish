@@ -23,38 +23,55 @@
                   <input class="input is-medium is-expanded" type="text"
                   placeholder="Enter the path of a secret or directory"
                   v-model.lazy="currentPath"
-                  @keyup.enter="changePath(currentPath)">
+                  @keyup.enter="pushPath(currentPath)">
                   </p>
                 </div>
               </div>
             </div>
 
-            <!-- manual insertion button: to be implemented later -->
-            <!-- <a class="button is-primary is-outlined">
-              <span class="icon is-small">
-                <i class="fa fa-plus"></i>
-              </span>
-              <span>Insert Secret</span>
-            </a> -->
-
             <!-- Actions on current path -->
             <a v-if="editMode === false && currentPathType === 'Path'"
               class="button is-info is-small is-marginless"
-              v-on:click="startEdit">
+              v-on:click="startEdit()">
               Add Secret
+            </a>
+            <a v-if="editMode === false && currentPathType === 'Path'"
+              class="button is-info is-small is-marginless"
+              v-on:click="selectAllSecrets()">
+              Select All Secrets
+            </a>
+            <a v-if="editMode === false && currentPathType === 'Path' && selectedRows.length !== 0"
+              class="button is-warning is-small is-marginless"
+              v-on:click="selectedRows = []; confirmDeleteSecrets = false">
+              Cancel Selection
+            </a>
+            <a v-if="editMode === false && currentPathType === 'Path' && selectedRows.length !== 0 && confirmDeleteSecrets === false"
+              class="button is-danger is-small is-marginless"
+              v-on:click="confirmDeleteSecrets = true">
+              Delete Selection
+            </a>
+            <a v-if="editMode === false && currentPathType === 'Path' && selectedRows.length !== 0 && confirmDeleteSecrets === true"
+              class="button is-danger is-small is-marginless"
+              v-on:click="deleteSelection()">
+              Really Delete {{selectedRows.length}} Secrets?
             </a>
 
             <!-- Actions on current secret -->
             <a v-if="editMode === false && currentPathType === 'Secret'"
               class="button is-success is-small is-marginless"
-              v-on:click="startEdit"
+              v-on:click="startEdit()"
               :disabled="displayJSON">
               Edit Secret
             </a>
-            <a v-if="editMode === false && currentPathType === 'Secret'"
+            <a v-if="editMode === false && currentPathType === 'Secret' && confirmDeleteSecrets === false"
+              class="button is-danger is-small is-marginless"
+              v-on:click="confirmDeleteSecrets = true">
+              Delete Secret
+            </a>
+            <a v-if="editMode === false && currentPathType === 'Secret' && confirmDeleteSecrets === true"
               class="button is-danger is-small is-marginless"
               v-on:click="deleteSecret(currentPath)">
-              Delete Secret
+              Confirm Deletion
             </a>
             <a v-if="editMode === false && currentPathType === 'Secret'"
               class="button is-info is-small is-marginless"
@@ -73,6 +90,10 @@
               v-on:click="cancelEdit">
               Cancel Edit
             </a>
+
+            <p v-if="editMode && currentPathType === 'Secret'" class="help is-info">
+              Inputs are multi-line by default. Press tab to complete a key-value pair.
+            </p>
           </div>
 
           <!-- data table -->
@@ -82,14 +103,29 @@
               <!-- headers -->
               <thead>
                 <tr>
-                  <th>Type</th>
-                  <th v-for="header in tableHeaders">{{ header }}</th>
+                  <th @click="sortBy('type')">
+                    Type
+                    <i v-if="sortKey.key === 'type' && sortKey.order === 'asc'" class="fa fa-caret-up"></i>
+                    <i v-if="sortKey.key === 'type' && sortKey.order === 'desc'" class="fa fa-caret-down"></i>
+                  </th>
+                  <th @click="sortBy('path')">
+                    {{currentPathType === 'Secret' ? 'Key' : 'Subpaths'}}
+                    <i v-if="sortKey.key === 'path' && sortKey.order === 'asc'" class="fa fa-caret-up"></i>
+                    <i v-if="sortKey.key === 'path' && sortKey.order === 'desc'" class="fa fa-caret-down"></i>
+                  </th>
+                  <th v-if="currentPathType === 'Secret'" @click="sortBy('desc')">
+                    Value
+                    <i v-if="sortKey.key === 'desc' && sortKey.order === 'asc'" class="fa fa-caret-up"></i>
+                    <i v-if="sortKey.key === 'desc' && sortKey.order === 'desc'" class="fa fa-caret-down"></i>
+                  </th>
+                  <th></th>
                 </tr>
               </thead>
 
               <!-- body -->
               <tbody>
-                <tr v-for="(entry, index) in tableData">
+                <tr v-for="(entry, index) in sortedTableData"
+                :class="selectedRows.includes(entry.path) ? 'is-selected' : ''">
                   <td width="68">
                     <span class="tag is-rounded is-pulled-left" v-bind:class="type(index)">
                       {{ entry.type }}
@@ -99,15 +135,26 @@
                   <!-- Editable key field -->
                   <td v-if="editMode && currentPathType === 'Secret'">
                     <p class="control">
-                      <input class="input is-small" type="text" placeholder="" v-model="entry.path">
+                      <textarea style="font-family: monospace; padding: 3.5px 6.5px 3.5px 6.5px;"
+                        v-bind:rows="String(entry.path).split('\n').length"
+                        placeholder="" v-model="entry.path"
+                        class="textarea is-small" type="text">
+                      </textarea>
                     </p>
                   </td>
                   <!-- View-only -->
-                  <td v-else>
-                    <span v-if="currentPathType === 'Secret'">
+                  <td v-else @click="select(entry.path)">
+                    <span
+                      v-if="currentPathType === 'Secret'"
+                      style="font-family: monospace;"
+                    >
                       {{ entry.path }}
                     </span>
-                    <a v-else @click="changePath(currentPath, entry)">
+                    <a
+                      v-else
+                      @click="pushPath(currentPath + entry.path); select(entry.path)"
+                      style="font-family: monospace;"
+                    >
                       {{ entry.path }}
                     </a>
                   </td>
@@ -115,18 +162,23 @@
                   <!-- Editable value field -->
                   <td v-if="editMode && currentPathType === 'Secret'">
                     <p class="control">
-                      <input class="input is-small" type="text" placeholder="" v-model="entry.desc">
+                      <textarea style="font-family: monospace; padding: 3.5px 6.5px 3.5px 6.5px;"
+                        v-focus
+                        v-bind:rows="String(entry.desc).split('\n').length"
+                        class="textarea is-small" type="text" placeholder="" v-model="entry.desc">
+                      </textarea>
                     </p>
                   </td>
                   <!-- View-only -->
-                  <td v-else>
-                    {{ entry.desc }}
-                  </td>
+                  <td v-if="!editMode && currentPathType === 'Secret'"
+                    style="white-space: pre-wrap; font-family: monospace;"
+                    >{{ entry.desc }}</td>
 
                   <!-- Save some space for deletion button -->
                   <td width="68">
                     <!-- Deleting a key-value pair in edit mode -->
-                    <a v-if="editMode && currentPathType === 'Secret'" @click="deleteItem(index)">
+                    <a v-if="editMode && currentPathType === 'Secret'"
+                      @click="deleteKeyPair(entry)">
                     <span class="icon">
                       <i class="fa fa-times-circle"></i>
                     </span>
@@ -152,33 +204,36 @@
                 <!-- new key value pair insertion row -->
                 <tr
                   v-if="editMode && currentPathType === 'Secret'"
-                  @keyup.enter="addKeyValue()"
                 >
                   <td width="68">
                   </td>
                   <td>
                     <p class="control">
-                    <input v-focus
-                      class="input is-small"
+                    <textarea style="font-family: monospace; padding: 3.5px 6.5px 3.5px 6.5px;"
+                      class="textarea is-small"
                       type="text"
-                      ref="newKey"
+                      ref="newKeyField"
                       placeholder="Add a key"
+                      v-bind:rows="String(newKey).split('\n').length"
                       v-model="newKey"
                       v-bind:class="[
                         newKey === '' ? '' : 'is-success',
-                        newKeyExists ? 'is-danger' : '']"
-                    >
+                        newKeyExists ? 'is-danger' : '']">
+                    </textarea>
                     </p>
                   </td>
                   <td>
                     <p class="control">
-                    <input
-                      class="input is-small"
+                    <textarea style="font-family: monospace; padding: 3.5px 6.5px 3.5px 6.5px;"
+                      class="textarea is-small"
                       type="text"
                       placeholder="Add a value"
+                      ref="newValueField"
+                      v-bind:rows="String(newValue).split('\n').length"
                       v-model="newValue"
-                      v-bind:class="[newValue === '' ? '' : 'is-success']"
-                    >
+                      v-on:keydown.tab.exact.prevent="addKeyValue()"
+                      v-bind:class="[newValue === '' ? '' : 'is-success']">
+                    </textarea>
                     </p>
                   </td>
                 </tr>
@@ -209,9 +264,16 @@
 
               <!-- footer only shows beyond a certain amount of data -->
               <tfoot v-show="tableData.length > 10">
-                <tr>
+                <tr v-if="this.currentPathType === 'Secret'">
                   <th>Type</th>
-                  <th v-for="header in tableHeaders">{{ header }}</th>
+                  <th>Key</th>
+                  <th>Value</th>
+                  <th></th>
+                </tr>
+                <tr v-if="this.currentPathType === 'Path'">
+                  <th>Type</th>
+                  <th>Subpaths</th>
+                  <th></th>
                 </tr>
               </tfoot>
 
@@ -222,7 +284,7 @@
             <div class="message-header">
               JSON:
             </div>
-            <pre v-highlightjs="JSON.stringify(constructedPayload, null, '    ')"><code class="javascript"></code></pre>
+            <pre class="is-paddingless" v-highlightjs="JSON.stringify(constructedPayload, null, '    ')"><code class="javascript"></code></pre>
           </article>
 
         </article>
@@ -233,6 +295,7 @@
 
 <script>
 const querystring = require('querystring')
+const _ = require('lodash')
 
 export default {
   data () {
@@ -245,12 +308,27 @@ export default {
       newKey: '',
       newValue: '',
       editMode: false,
-      confirmDelete: []
+      confirmDelete: [],
+      confirmDeleteSecrets: false,
+      selectedRows: [],
+      sortKey: {
+        key: '',
+        order: ''
+      }
     }
   },
 
   mounted: function () {
-    this.changePath(this.currentPath)
+    // if path parameter was provided via url, go to that
+    this.changePath(this.$route.query['path'] || this.currentPath)
+  },
+
+  watch: {
+    // watch for route changes, e.g. if query parameters are updated
+    '$route' (to, from) {
+      // if query path is provided, go to that secret
+      this.changePath(to.query['path'] || '')
+    }
   },
 
   computed: {
@@ -292,28 +370,44 @@ export default {
       }
     },
 
-    tableHeaders: function () {
-      if (this.currentPathType === 'Secret') {
-        return ['Key', 'Value', '']
-      } else if (this.currentPathType === 'Path') {
-        return ['Subpaths', 'Description', '']
+    sortedTableData: function () {
+      if (!this.tableData || this.tableData.length === 0 || this.sortKey.key === '') {
+        return this.tableData
       }
-      return []
+      return _.orderBy(this.tableData, [this.sortKey.key], [this.sortKey.order])
     }
   },
 
   methods: {
+    tempFinish: function () {
+      this.$nprogress.done()
+    },
+
     deleteItem: function (index) {
       this.tableData.splice(index, 1)
     },
 
-    changePath: function (path, entry) {
-      if (entry) {
-        if (entry.type === 'Key') {
-          return
-        } else {
-          path += entry.path
-        }
+    deleteKeyPair: function (entry) {
+      let index = _.findIndex(this.tableData, entry)
+      if (index !== -1) {
+        this.deleteItem(index)
+      }
+    },
+
+    pushPath: function (path) {
+      if (path) {
+        this.$router.push({
+          query: {
+            path: path
+          }
+        })
+      }
+    },
+
+    changePath: function (path) {
+      // if user was editing, cancel it and restore local data
+      if (this.editMode) {
+        this.cancelEdit()
       }
 
       this.newKey = ''
@@ -327,7 +421,9 @@ export default {
       })
       .then((response) => {
         this.tableData = []
+        this.selectedRows = []
         this.currentPath = response.data.path
+
         let result = response.data.result
         if (this.currentPathType === 'Path') {
           // listing subdirectories
@@ -349,7 +445,6 @@ export default {
           }
         }
       })
-
       .catch((error) => {
         this.$onError(error)
         this.tableData = []
@@ -374,13 +469,12 @@ export default {
         return
       }
 
-      // fetch data again
-      this.currentPath = resultPath
-      this.changePath(this.currentPath)
+      // update query parameter which will trigger loading the secret
+      this.pushPath(resultPath)
     },
 
     type: function (index) {
-      switch (this.tableData[index].type) {
+      switch (this.sortedTableData[index].type) {
         case 'Secret':
           return { 'tag': true, 'is-rounded': true, 'is-info': true }
         case 'Path':
@@ -400,6 +494,7 @@ export default {
           message: 'Key is required',
           type: 'warning'
         })
+        this.$refs.newKeyField.focus()
         return
       }
       if (this.newKeyExists) {
@@ -408,6 +503,7 @@ export default {
           message: 'Key already exists',
           type: 'warning'
         })
+        this.$refs.newKeyField.focus()
         return
       }
       // insert new key value pair to local table (don't write it to server yet)
@@ -420,7 +516,8 @@ export default {
       this.newKey = ''
       this.newValue = ''
       // reset focus to key input
-      this.$refs.newKey.focus()
+      // using nextTick because vuejs mount order comes after focus
+      this.$nextTick(() => this.$refs.newKeyField.focus())
     },
 
     startEdit: function () {
@@ -451,6 +548,7 @@ export default {
           type: 'success'
         })
         this.editMode = false
+        this.pushPath(this.currentPath)
       })
       .catch((error) => {
         this.$onError(error)
@@ -543,6 +641,169 @@ export default {
       .catch((error) => {
         this.$onError(error)
       })
+    },
+
+    deleteSecretMulti: function (paths) {
+      var successes = 0
+      var failures = 0
+
+      for (var i = 0; i < paths.length; i++) {
+        let path = paths[i]
+
+        // check if current path is valid
+        if (!path.includes('/')) {
+          this.$notify({
+            title: 'Invalid',
+            message: 'Cannot delete a mount',
+            type: 'warning'
+          })
+          failures++
+          continue
+        }
+        // recursive deletion may come later, but not now
+        if (path.endsWith('/')) {
+          this.$notify({
+            title: 'Invalid',
+            message: 'Cannot delete a path',
+            type: 'warning'
+          })
+          failures++
+          continue
+        }
+
+        // request deletion of secret
+        this.$http.delete('/v1/secrets?path=' + encodeURIComponent(path), {
+          headers: {'X-Vault-Token': this.session ? this.session.token : ''}
+        })
+        .then((response) => {
+          this.editMode = false
+          successes++
+
+          // if all requests have been completed, notify user
+          if (successes + failures === paths.length) {
+            this.$message({
+              message: successes.toString() + ' out of ' + paths.length.toString() + ' secret(s) deleted successfully!',
+              type: successes === paths.length ? 'success' : 'warning',
+              duration: 0,
+              showCloseButton: true
+            })
+          }
+
+          if (this.currentPath === path) {
+            // if deleting current secret, wipe table data
+            this.tableData = []
+          } else {
+            // if deleting a row, find it and remove it
+            for (var j = 0; j < this.tableData.length; j++) {
+              if (this.currentPath + this.tableData[j].path === path) {
+                this.deleteItem(j)
+              }
+            }
+          }
+        })
+        .catch((error) => {
+          this.$onError(error)
+          failures++
+
+          // if all requests have been completed, notify user
+          if (successes + failures === paths.length) {
+            this.$message({
+              message: successes.toString() + ' out of ' + paths.length.toString() + ' secret(s) deleted successfully!',
+              type: successes === paths.length ? 'success' : 'warning',
+              duration: 0,
+              showCloseButton: true
+            })
+          }
+        })
+      }
+    },
+
+    // either adds or removes the entry from selected rows
+    select: function (entry) {
+      // selection on keys is pointless
+      if (this.currentPathType === 'Secret') {
+        return
+      }
+      // selection on paths is not supported for now
+      if (entry.endsWith('/')) {
+        return
+      }
+      // reset delete confirmation
+      this.confirmDeleteSecrets = false
+      // otherwise, select the entry (or unselect it if it already is selected)
+      if (this.selectedRows.includes(entry)) {
+        this.unselect(entry)
+      } else {
+        this.selectedRows.push(entry)
+      }
+    },
+
+    unselect: function (entry) {
+      let index = this.selectedRows.indexOf(entry)
+      if (index > -1) {
+        this.selectedRows.splice(index, 1)
+      }
+    },
+
+    selectAllSecrets: function () {
+      // if this current path is not a path, there's nothing to be selected
+      if (this.currentPathType !== 'Path') {
+        return
+      }
+      // for each item in table, if it's a secret, add it to the selected array
+      for (var i = 0; i < this.tableData.length; i++) {
+        let entry = this.tableData[i].path
+        if (!entry.endsWith('/') && !this.selectedRows.includes(entry)) {
+          this.selectedRows.push(entry)
+        }
+      }
+    },
+
+    deleteSelection: function () {
+      if (this.currentPathType !== 'Path') {
+        return
+      }
+
+      // append full secret paths to an array
+      var paths = []
+      for (var i = 0; i < this.selectedRows.length; i++) {
+        paths.push(this.currentPath + this.selectedRows[i])
+      }
+
+      // delete all selected secrets and give toast notification
+      this.deleteSecretMulti(paths)
+
+      // reset selection
+      this.selectedRows = []
+    },
+
+    sortBy: function (s) {
+      if (s === '') {
+        this.sortKey = {
+          key: '',
+          order: ''
+        }
+        return
+      }
+
+      if (s === this.sortKey.key) {
+        if (this.sortKey.order === '') {
+          this.sortKey.order = 'asc'
+        } else if (this.sortKey.order === 'asc') {
+          this.sortKey.order = 'desc'
+        } else {
+          // the third sort click should reset sorting
+          this.sortKey = {
+            key: '',
+            order: ''
+          }
+        }
+      } else {
+        this.sortKey = {
+          key: s,
+          order: 'asc'
+        }
+      }
     }
 
   }

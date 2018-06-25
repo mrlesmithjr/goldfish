@@ -1,4 +1,4 @@
-<template>
+pre class="is-paddingless" v-highlightjs<template>
   <div>
     <div class="tile is-ancestor">
       <div class="tile is-parent is-vertical">
@@ -25,6 +25,22 @@
                   Search
                 </a>
               </p>
+            </div>
+            <div class="field">
+              <div class="control">
+                <label class="radio">
+                  <input type="radio" v-model="show" value="syntax">
+                  Highlight syntax
+                </label>
+                <label class="radio">
+                  <input type="radio" v-model="show" value="diffSingle">
+                  Line-by-line diff
+                </label>
+                <label class="radio">
+                  <input type="radio" v-model="show" value="diffDouble">
+                  Side-by-side diff
+                </label>
+              </div>
             </div>
           </div>
 
@@ -55,8 +71,8 @@
               <div v-if="bConfirm" class="field has-addons">
                 <p class="control">
                   <input class="input" type="password"
-                  placeholder="Enter an unseal token"
-                  v-model="unsealToken"
+                  placeholder="Enter an unseal key"
+                  v-model="unsealKey"
                   @keyup.enter="approve()">
                 </p>
                 <p class="control">
@@ -67,14 +83,14 @@
               </div>
             </div>
 
-            <!-- Request details -->
-            <div class="columns">
+            <!-- syntax-highlighted diff -->
+            <div v-if="show === 'syntax'" class="columns">
               <div v-if="request.Previous" class="column">
                 <article class="message is-primary" :class="request.Proposed ? '' : 'is-danger'">
                   <div class="message-header">
                     {{request.Proposed ? 'Current policy rules' : 'Will be deleted!'}}
                   </div>
-                  <pre v-highlightjs="request.Previous"><code class="ruby"></code></pre>
+                  <pre class="is-paddingless" v-highlightjs="request.Previous"><code class="ruby"></code></pre>
                 </article>
               </div>
 
@@ -83,10 +99,13 @@
                   <div class="message-header">
                   {{request.Previous ? 'Proposed policy rules' : 'Will be created!'}}
                   </div>
-                  <pre v-highlightjs="request.Proposed"><code class="ruby"></code></pre>
+                  <pre  class="is-paddingless" v-highlightjs="request.Proposed"><code class="ruby"></code></pre>
                 </article>
               </div>
             </div>
+
+            <!-- diff via jsdiff and diff2html -->
+            <div v-if="show === 'diffSingle' || show === 'diffDouble'" v-html="diff"></div>
           </article>
 
           <!-- Request type: github -->
@@ -117,8 +136,8 @@
               <div v-if="bConfirm" class="field has-addons">
                 <p class="control">
                   <input class="input" type="password"
-                  placeholder="Enter an unseal token"
-                  v-model="unsealToken"
+                  placeholder="Enter an unseal key"
+                  v-model="unsealKey"
                   @keyup.enter="approve()">
                 </p>
                 <p class="control">
@@ -129,9 +148,9 @@
               </div>
             </div>
 
-            <!-- Request details -->
+            <!-- syntax-highlighted diff -->
             <div class="box"
-            v-if="request.Progress !== request.Required"
+            v-if="show === 'syntax' && request.Progress !== request.Required"
             v-for="(details, policy) in request.Changes">
               <!-- policy name title and status tag -->
               <nav class="level">
@@ -155,7 +174,7 @@
                     <div class="message-header">
                       Current policy rules
                     </div>
-                    <pre v-highlightjs="details.Previous"><code class="ruby"></code></pre>
+                    <pre class="is-paddingless" v-highlightjs="details.Previous"><code class="ruby"></code></pre>
                   </article>
                 </div>
 
@@ -164,11 +183,14 @@
                     <div class="message-header">
                     Proposed policy rules
                     </div>
-                    <pre v-highlightjs="details.Proposed"><code class="ruby"></code></pre>
+                    <pre class="is-paddingless" v-highlightjs="details.Proposed"><code class="ruby"></code></pre>
                   </article>
                 </div>
               </div>
             </div>
+
+            <!-- diff via jsdiff and diff2html -->
+            <div v-if="(show === 'diffSingle' || show === 'diffDouble') && request.Progress !== request.Required" v-html="diff"></div>
           </article>
 
           <!-- Request type: token -->
@@ -197,8 +219,8 @@
               <div v-if="bConfirm" class="field has-addons">
                 <p class="control">
                   <input class="input" type="password"
-                  placeholder="Enter an unseal token"
-                  v-model="unsealToken"
+                  placeholder="Enter an unseal key"
+                  v-model="unsealKey"
                   @keyup.enter="approve()">
                 </p>
                 <p class="control">
@@ -216,8 +238,9 @@
                 <div class="control">
                   <div class="tags has-addons">
                     <span class="tag">Orphan?</span>
-                    <span class="tag is-primary" :class="request.Orphan ? 'is-warning': ''">
-                      {{request.Orphan ? 'Yes' : 'No'}}
+                    <span class="tag is-primary"
+                    :class="(request.Orphan || tokenRequestPreview.no_parent) ? 'is-warning': ''">
+                      {{(request.Orphan || tokenRequestPreview.no_parent) ? 'Yes' : 'No'}}
                     </span>
                   </div>
                 </div>
@@ -237,12 +260,12 @@
               <div class="columns">
                 <div class="column">
                   <article class="message is-primary">
-                    <pre v-highlightjs="JSON.stringify(tokenRequestPreview, null, '    ')"><code class="javascript"></code></pre>
+                    <pre class="is-paddingless" v-highlightjs="JSON.stringify(tokenRequestPreview, null, '    ')"><code class="javascript"></code></pre>
                   </article>
                 </div>
                 <div class="column">
                   <article v-if="request.CreateResponse" class="message is-primary">
-                    <pre v-highlightjs="JSON.stringify(request.CreateResponse.wrap_info, null, '    ')"><code class="javascript"></code></pre>
+                    <pre class="is-paddingless" v-highlightjs="JSON.stringify(request.CreateResponse.wrap_info, null, '    ')"><code class="javascript"></code></pre>
                   </article>
                 </div>
               </div>
@@ -256,6 +279,9 @@
 </template>
 
 <script>
+const jsdiff = require('diff')
+const diff2html = require('diff2html').Diff2Html
+
 export default {
   data () {
     return {
@@ -263,7 +289,8 @@ export default {
       request: null,
       bConfirm: false,
       bReject: false,
-      unsealToken: ''
+      unsealKey: '',
+      show: 'syntax'
     }
   },
 
@@ -281,6 +308,42 @@ export default {
         return {}
       }
       return this.request.CreateRequest
+    },
+
+    diff: function () {
+      if (!this.request || this.show === 'syntax') {
+        return ''
+      }
+
+      let format = 'line-by-line'
+      if (this.show === 'diffDouble') {
+        format = 'side-by-side'
+      }
+
+      if (this.request['Previous'] && this.request['Proposed']) {
+        let diff = jsdiff.createPatch(
+          this.request.PolicyName,
+          this.request.Previous || '',
+          this.request.Proposed || '',
+          '', '', {context: 10000}
+        )
+        return diff2html.getPrettyHtml(diff, {inputFormat: 'diff', outputFormat: format, matching: 'lines'})
+      }
+      if (this.request['Changes']) {
+        let diff = ''
+        for (const policy in this.request.Changes) {
+          if (this.request.Changes.hasOwnProperty(policy)) {
+            diff = diff + jsdiff.createPatch(
+              policy,
+              this.request.Changes[policy].Previous || '',
+              this.request.Changes[policy].Proposed || '',
+              '', '', {context: 10000}
+            )
+          }
+        }
+        return diff2html.getPrettyHtml(diff, {inputFormat: 'diff', outputFormat: format, matching: 'lines'})
+      }
+      return ''
     }
   },
 
@@ -289,7 +352,7 @@ export default {
       this.request = null
       this.bConfirm = false
       this.bReject = false
-      this.unsealToken = ''
+      this.unsealKey = ''
     },
 
     // requests for the request object from backend
@@ -310,11 +373,11 @@ export default {
 
     approve: function () {
       this.$http.post('/v1/request/approve?hash=' + this.searchString, {
-        unseal: this.unsealToken
+        unseal: this.unsealKey
       }, {
         headers: {'X-Vault-Token': this.session ? this.session.token : ''}
       }).then((response) => {
-        this.unsealToken = ''
+        this.unsealKey = ''
         this.request = response.data.result
         // notify user of progress
         if (this.request.Progress === this.request.Required) {
@@ -337,27 +400,32 @@ export default {
           if (this.request.Progress === 1) {
             this.$notify({
               title: 'Timer started',
-              message: 'Other operators have a 1 hour window to enter their unseal tokens',
+              message: 'Other operators have a 1 hour window to enter their unseal keys',
               duration: 20000,
               type: 'warning'
             })
           } else {
             this.$notify({
               title: 'Progress',
-              message: this.request.Progress.toString() + ' unseal tokens received so far',
+              message: this.request.Progress.toString() + ' unseal keys received so far',
               type: 'success'
             })
           }
         }
       })
       .catch((error) => {
-        this.unsealToken = ''
+        this.unsealKey = ''
         try {
           if (error.response.data.error.includes('Progress has been reset')) {
             this.request.Progress = 0
-          } else {
-            this.$onError(error)
+          } else if (error.response.data.error.includes('Request has been deleted')) {
+            this.$notify({
+              title: 'Error',
+              message: 'This request contains invalid data, and has been deleted as a result',
+              type: 'error'
+            })
           }
+          this.$onError(error)
         } catch (e) {
           this.$onError(error)
         }

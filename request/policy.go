@@ -127,8 +127,8 @@ func (r *PolicyRequest) Verify(auth *vault.AuthInfo) error {
 	return nil
 }
 
-// provides an unseal token as an approval to a request
-// if there are sufficient unseal tokens, attempt to roll the change
+// provides an unseal key as an approval to a request
+// if there are sufficient unseal keys, attempt to roll the change
 func (r *PolicyRequest) Approve(hash string, unsealKey string) error {
 	if unsealKey == "" {
 		return errors.New("Unseal key cannot be empty")
@@ -151,18 +151,18 @@ func (r *PolicyRequest) Approve(hash string, unsealKey string) error {
 	r.Progress = 0
 	defer vault.DeleteFromCubbyhole("unseal_wrapping_tokens/" + hash)
 
-	// unwrap the unseal tokens
+	// unwrap the unseal keys
 	unseals, err := unwrapUnseals(wrappingTokens)
 	if err != nil {
 		vault.WriteToCubbyhole("requests/"+hash, structs.Map(r))
-		return err
+		return errors.New("Progress has been reset: " + err.Error())
 	}
 
 	// generate root token
 	rootToken, err := generateRootToken(unseals)
 	if err != nil {
 		vault.WriteToCubbyhole("requests/"+hash, structs.Map(r))
-		return err
+		return errors.New("Progress has been reset: " + err.Error())
 	}
 	var rootAuth = &vault.AuthInfo{
 		Type: "token",
@@ -180,17 +180,17 @@ func (r *PolicyRequest) Approve(hash string, unsealKey string) error {
 	if r.Proposed == "" {
 		// if the request was to delete the policy
 		if err := rootAuth.DeletePolicy(r.PolicyName); err != nil {
-			return err
+			return errors.New(err.Error() + " Request has been deleted.")
 		}
 		r.Previous = ""
 	} else {
 		// if the request was to change the policy
 		if err := rootAuth.PutPolicy(r.PolicyName, r.Proposed); err != nil {
-			return err
+			return errors.New(err.Error() + " Request has been deleted.")
 		}
 		// update the request object with the new policy from vault
 		if p, err := rootAuth.GetPolicy(r.PolicyName); err != nil {
-			return err
+			return errors.New(err.Error() + " Request has been deleted.")
 		} else {
 			r.Previous = p
 		}
@@ -199,7 +199,7 @@ func (r *PolicyRequest) Approve(hash string, unsealKey string) error {
 	return nil
 }
 
-// purges the request entry and unseal tokens from goldfish's cubbyhole
+// purges the request entry and unseal keys from goldfish's cubbyhole
 func (r *PolicyRequest) Reject(auth *vault.AuthInfo, hash string) error {
 	if _, err := vault.DeleteFromCubbyhole("unseal_wrapping_tokens/" + hash); err != nil {
 		return err

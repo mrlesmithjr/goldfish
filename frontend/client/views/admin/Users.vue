@@ -9,26 +9,25 @@
           <div class="tabs is-medium is-boxed is-fullwidth">
             <ul>
               <li v-bind:class="tabName === 'token' ? 'is-active' : ''"
-                v-on:click="switchTab(0)"
+                v-on:click="switchTab(0, false)"
                 disabled>
                 <a>Tokens</a>
               </li>
               <li v-bind:class="tabName === 'userpass' ? 'is-active' : ''"
-                v-on:click="switchTab(1)"
+                v-on:click="switchTab(1, true)"
                 :disabled="loading">
                 <a>Userpass</a>
               </li>
               <li v-bind:class="tabName === 'approle' ? 'is-active' : ''"
-                v-on:click="switchTab(2)"
+                v-on:click="switchTab(2, true)"
                 :disabled="loading">
                 <a>Approle</a>
               </li>
               <li v-bind:class="tabName === 'ldap' ? 'is-active' : ''"
-                v-on:click="switchTab(3)"
+                v-on:click="switchTab(3, true)"
                 :disabled="loading">
                 <a>LDAP</a>
               </li>
-              <!-- <li disabled><a>Certificates</a></li> -->
             </ul>
           </div>
 
@@ -166,7 +165,9 @@
                   <td width="34">
                   <span class="icon">
                     <a @click="openModalBasic(index)">
-                      <i class="fa fa-info"></i>
+                      <span class="icon has-text-info">
+                        <i class="fa fa-info-circle"></i>
+                      </span>
                     </a>
                   </span>
                   </td>
@@ -183,6 +184,12 @@
                 </tr>
               </tbody>
             </table>
+
+            <a v-if="tableData.length === 0" class="pagination-next"
+              v-on:click="switchTab(0, true)"
+              :disabled="loading"
+            >Load the first page of tokens</a>
+
           </div>
 
           <!-- Userpass tab -->
@@ -202,7 +209,9 @@
                   <td width="34">
                     <span class="icon">
                       <a @click="openModalBasic(index)">
-                        <i class="fa fa-info"></i>
+                        <span class="icon has-text-info">
+                          <i class="fa fa-info-circle"></i>
+                        </span>
                       </a>
                     </span>
                   </td>
@@ -238,7 +247,9 @@
                   <td width="34">
                     <span class="icon">
                       <a @click="openModalBasic(index)">
-                        <i class="fa fa-info"></i>
+                        <span class="icon has-text-info">
+                          <i class="fa fa-info-circle"></i>
+                        </span>
                       </a>
                     </span>
                   </td>
@@ -325,9 +336,21 @@
       </div>
     </div>
 
-    <modal :visible="showModal" :title="selectedItemTitle" :info="selectedItemInfo" @close="closeModalBasic"></modal>
+    <modal
+      :visible="showModal"
+      :title="selectedItemTitle"
+      :info="selectedItemInfo"
+      :infoIsJSON="true"
+      @close="closeModalBasic">
+    </modal>
 
-    <confirmModal :visible="showDeleteModal" :title="confirmDeletionTitle" :info="selectedItemInfo" @close="closeDeleteModal" @confirmed="deleteItem(selectedIndex)"></confirmModal>
+    <confirmModal
+      :visible="showDeleteModal"
+      :title="confirmDeletionTitle"
+      :info="selectedItemInfo"
+      @close="closeDeleteModal"
+      @confirmed="deleteItem(selectedIndex)">
+    </confirmModal>
 
   </div>
 </template>
@@ -355,6 +378,7 @@ export default {
       lastPage: 1,
       tokenCount: 0,
       loading: false,
+
       // when adding properties here,
       // be careful with reactivity (overwritten by switchTab())
       search: {
@@ -369,7 +393,7 @@ export default {
   },
 
   mounted: function () {
-    this.switchTab(0)
+    this.switchTab(0, false)
   },
 
   computed: {
@@ -419,13 +443,13 @@ export default {
 
     selectedItemTitle: function () {
       if (this.selectedIndex !== -1) {
-        return String(this.tableData[this.selectedIndex][this.tableColumns[0]])
+        return 'Details'
       }
       return ''
     },
     selectedItemInfo: function () {
       if (this.selectedIndex !== -1) {
-        return 'This modal panel is under construction'
+        return JSON.stringify(this.tableData[this.selectedIndex], null, '\t')
       }
       return ''
     },
@@ -456,7 +480,9 @@ export default {
   },
 
   methods: {
-    switchTab: function (index) {
+    // if fetchDetails is set to false, accessor details will not be fetched
+    // this lightens potentially unnecessary stress on the vault server
+    switchTab: function (index, fetchDetails = true) {
       // switching during loading is disabled
       if (this.loading) {
         return
@@ -482,7 +508,11 @@ export default {
         }).then((response) => {
           this.accessors = response.data.result
           this.lastPage = Math.ceil(this.accessors.length / 300)
-          this.loadPage(1) // loadPage will turn loading to false
+          if (fetchDetails) {
+            this.loadPage(1) // loadPage will turn loading to false
+          } else {
+            this.loading = false
+          }
         })
         .catch((error) => {
           this.loading = false
@@ -742,9 +772,5 @@ export default {
 
   .fa-trash-o {
     color: red;
-  }
-
-  .fa-info {
-    color: lightskyblue;
   }
 </style>

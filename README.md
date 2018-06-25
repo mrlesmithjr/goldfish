@@ -15,9 +15,12 @@
 
 </div>
 
+
 ## What is this?
 
-[Goldfish](https://vault-ui.io) is a HashiCorp Vault UI
+<div class="center">
+<blockquote class="twitter-tweet" data-cards="hidden" data-lang="en"><p lang="en" dir="ltr"><a href="https://vault-ui.io">Goldfish</a> - A HashiCorp Vault UI and workflow tool. <a href="https://t.co/uVWLuQEBMi">pic.twitter.com/uVWLuQEBMi</a></p>&mdash; Kelsey Hightower (@kelseyhightower) <a href="https://twitter.com/kelseyhightower/status/899717092496121856?ref_src=twsrc%5Etfw">August 21, 2017</a></blockquote>
+</div>
 
 Goldfish answers many auditing and administration questions that Vault API can't:
 
@@ -65,13 +68,6 @@ Seriously, the instructions fit on one screen!
 * [x] **DONE!** Resource dependency chain
 	- E.g. Will removing a particular policy affect current users?
 	- Will removing a mount or secret path affect current users?
-* [ ] Certificate management panel
-	- If vault is a certificate authority, there should be a user-friendly panel of details and statistics
-* [ ] Moving root tokens away from the human eye
-	- More root operations like mount tuning should also be done via request & approval basis, like policy changes
-* [ ] Database management panel
-	- Vault 0.7.3 allows for multiple db connections per backend, but lacks a management system
-
 
 
 <!--
@@ -81,7 +77,7 @@ Seriously, the instructions fit on one screen!
 ![](screenshots/Login.png)
 
 
-![](screenshots/Policy_request_approve.png)
+![](screenshots/PolicyRequest.png)
 
 
 ![](screenshots/BulletinBoard.png)
@@ -93,16 +89,13 @@ Seriously, the instructions fit on one screen!
 ![](screenshots/Users.png)
 
 
-![](screenshots/Policies.png)
-
-
 
 <!--
 -->
 ## Developing Goldfish
 
 #### Running locally
-You'll need go (v1.8), nodejs (v6), and npm (v5)
+You'll need go (v1.9), nodejs (v8.2), and npm (v5)
 
 ```bash
 # hashicorp vault ui
@@ -137,7 +130,33 @@ cd goldfish/vagrant
 # this will take awhile
 vagrant up --provision
 
-# open up localhost:8001 in chrome on your local machine. You can login with token 'goldfish'
+# go to localhost:8080 on your local machine and login with token 'goldfish'
+
+# changes to frontend .vue files will be hot-reloaded
+# to force a full reload for the frontend, ssh into the machine and run
+#     `sudo systemctl restart goldfish_frontend.service`
+# to recompile and re-run the backend, ssh into the machine and run
+#     `sudo systemctl restart goldfish.service`
+```
+
+
+#### Compiling
+You'll need Go(v1.9), Nodejs (v8.2.0), Npm (v5)
+
+Note that using different versions (of nodeJS, especially) will cause differences in the final binary.
+
+```bash
+# download the source code
+go get -d github.com/caiyeon/goldfish
+cd $GOPATH/src/github.com/caiyeon/goldfish
+
+# resetting to a tagged version is recommended
+# no support will be given to arbitrary commits on the master branch
+git fetch --all --tags --prune
+git checkout tags/<version> # version could be, for example, v0.8.0
+
+# compile the binary
+sh build.sh
 ```
 
 
@@ -145,9 +164,7 @@ vagrant up --provision
 <!--
 -->
 ## Development
-Goldfish is in very active development:
-
-![](screenshots/Pulse.png)
+Goldfish is in very active development.
 
 Pull requests and feature requests are welcome. Feel free to suggest new workflows by opening issues.
 
@@ -172,6 +189,12 @@ Backend:
 
 See: [Architecture](https://github.com/Caiyeon/goldfish/wiki/Architecture)
 
+
+<!--
+-->
+## Sponsored by
+
+![](screenshots/DO_Logo_Horizontal_Blue.png)
 
 
 <!--

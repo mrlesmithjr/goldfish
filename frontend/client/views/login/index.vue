@@ -16,7 +16,7 @@
               <div class="field has-addons">
                 <div class="control">
                   <input class="input" type="text" v-model="secretID"
-                  placeholder="Insert wrapping token">
+                  placeholder="Insert wrapping token" @keyup.enter="bootstrapGoldfish()">
                   <p class="help is-info">
                     vault write -f -wrap-ttl=5m auth/approle/role/goldfish/secret-id
                   </p>
@@ -47,16 +47,27 @@
                       <option v-bind:value="'Userpass'">Userpass</option>
                       <option v-bind:value="'Github'">Github</option>
                       <option v-bind:value="'LDAP'">LDAP</option>
+                      <option v-bind:value="'Okta'">Okta</option>
                     </select>
                   </div>
                 </div>
+              </div>
+
+              <!-- Custom login path -->
+              <div v-if="bCustomPath && type !== 'Token'" class="field">
+                <p class="control has-icons-left">
+                  <input class="input" type="text" placeholder="Mount name e.g. 'ldap2'" v-model="customPath">
+                  <span class="icon is-small is-left">
+                    <i class="fa fa-tasks"></i>
+                  </span>
+                </p>
               </div>
 
               <!-- Token login form -->
               <div v-if="type === 'Token'" class="field">
                 <p class="control has-icons-left">
                   <input class="input" type="password" placeholder="Vault Token" v-model="ID">
-                  <span class="icon is-small">
+                  <span class="icon is-small is-left">
                     <i class="fa fa-lock"></i>
                   </span>
                 </p>
@@ -67,7 +78,7 @@
                 <div class="field">
                   <p class="control has-icons-left">
                     <input class="input" type="text" placeholder="Vault Username" v-model="ID">
-                    <span class="icon is-small">
+                    <span class="icon is-small is-left">
                       <i class="fa fa-user-circle-o"></i>
                     </span>
                   </p>
@@ -75,7 +86,7 @@
                 <div class="field">
                   <p class="control has-icons-left">
                     <input class="input" type="password" placeholder="Vault Password" v-model="password">
-                    <span class="icon is-small">
+                    <span class="icon is-small is-left">
                       <i class="fa fa-lock"></i>
                     </span>
                   </p>
@@ -86,7 +97,7 @@
               <div v-if="type === 'Github'" class="field">
                 <p class="control has-icons-left">
                   <input class="input" type="password" placeholder="Github Access Token" v-model="ID">
-                  <span class="icon is-small">
+                  <span class="icon is-small is-left">
                     <i class="fa fa-lock"></i>
                   </span>
                 </p>
@@ -97,7 +108,7 @@
                 <div class="field">
                   <p class="control has-icons-left">
                     <input class="input" type="text" placeholder="Username" v-model="ID">
-                    <span class="icon is-small">
+                    <span class="icon is-small is-left">
                       <i class="fa fa-user-circle-o"></i>
                     </span>
                   </p>
@@ -105,10 +116,39 @@
                 <div class="field">
                   <p class="control has-icons-left">
                     <input class="input" type="password" placeholder="Password" v-model="password">
-                    <span class="icon is-small">
+                    <span class="icon is-small is-left">
                       <i class="fa fa-lock"></i>
                     </span>
                   </p>
+                </div>
+              </div>
+
+              <!-- Okta login form -->
+              <div v-if="type === 'Okta'" class="field">
+                <div class="field">
+                  <p class="control has-icons-left">
+                    <input class="input" type="text" placeholder="Username" v-model="ID">
+                    <span class="icon is-small is-left">
+                      <i class="fa fa-user-circle-o"></i>
+                    </span>
+                  </p>
+                </div>
+                <div class="field">
+                  <p class="control has-icons-left">
+                    <input class="input" type="password" placeholder="Password" v-model="password">
+                    <span class="icon is-small is-left">
+                      <i class="fa fa-lock"></i>
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div v-if="type !== 'Token'" class="field">
+                <div class="control">
+                  <label class="checkbox">
+                    <input type="checkbox" v-model="bCustomPath">
+                    Custom path
+                  </label>
                 </div>
               </div>
 
@@ -153,12 +193,15 @@
                 </tbody>
               </table>
               <p v-if="session !== null" class="control">
-                <button class="button is-warning" @click="logout()">
-                  Logout
-                </button>
                 <button v-if="renewable" class="button is-primary"
                 @click="renewLogin()">
                   Renew
+                </button>
+                <button class="button is-warning" @click="logout(false)">
+                  Logout
+                </button>
+                <button class="button is-warning" @click="logout(true)">
+                  Revoke Token
                 </button>
               </p>
             </div>
@@ -259,7 +302,9 @@ export default {
       goldfishHealthData: {},
       goldfishHealthLoading: false,
       secretID: '',
-      bootstrapLoading: false
+      bootstrapLoading: false,
+      bCustomPath: false,
+      customPath: ''
     }
   },
 
@@ -308,7 +353,7 @@ export default {
       this.vaultHealthLoading = true
       this.$http.get('/v1/vaulthealth')
       .then((response) => {
-        this.vaultHealthData = JSON.parse(response.data.result)
+        this.vaultHealthData = response.data.result
         this.vaultHealthData['server_time_utc'] = moment.utc(
           moment.unix(this.vaultHealthData['server_time_utc']))
           .format('ddd, h:mm:ss A MMMM Do YYYY') + ' GMT'
@@ -346,9 +391,10 @@ export default {
 
     login: function () {
       this.$http.post('/v1/login', {
-        Type: this.type.toLowerCase(),
+        type: this.type.toLowerCase(),
         id: this.ID,
-        Password: this.password
+        password: this.password,
+        path: this.bCustomPath ? this.customPath.trim('/') : ''
       }, {
         headers: {'X-Vault-Token': this.session ? this.session.token : ''}
       })
@@ -376,7 +422,7 @@ export default {
         this.$store.commit('setSession', newSession)
 
         // notify user of generated client-token
-        if (this.type === 'Userpass' || this.type === 'LDAP') {
+        if (this.type === 'Userpass' || this.type === 'LDAP' || this.type === 'Okta') {
           this.$message({
             message: 'Your access token is: ' + response.data.result['id'] + ' and this is the only time you will see it. If you wish, you may login with this to avoid creating unnecessary access tokens in the future.',
             type: 'warning',
@@ -387,21 +433,49 @@ export default {
       })
       .catch((error) => {
         // to avoid ambiguity, current session should be purged when new login fails
-        this.logout()
+        this.logout(false)
         this.$onError(error)
+        if (this.bCustomPath && error.response.status === 400 &&
+          error.response.data.error === 'Vault:  missing client token') {
+          this.$notify({
+            title: 'Custom path?',
+            message: 'If the custom path does not exist, vault will respond with error 400',
+            type: 'warning',
+            duration: 10000
+          })
+        }
       })
     },
 
-    logout: function () {
-      // purge session from localstorage
-      window.localStorage.removeItem('session')
-      // mutate vuex state
-      this.$store.commit('clearSession')
+    logout: function (revoke) {
+      // if user wants to revoke token
+      if (revoke) {
+        this.$http.post('/v1/token/revoke-self', {}, {
+          headers: {'X-Vault-Token': this.session ? this.session.token : ''}
+        })
+        .then((response) => {
+          // notify user, and clear inputs
+          this.$notify({
+            title: 'Token revoked!',
+            message: '',
+            type: 'success'
+          })
+          // purge session from localstorage
+          window.localStorage.removeItem('session')
+          // mutate vuex state
+          this.$store.commit('clearSession')
+        })
+        .catch((error) => {
+          this.$onError(error)
+        })
+      }
     },
 
     clearFormData: function () {
       this.ID = ''
       this.password = ''
+      this.bCustomPath = false
+      this.customPath = ''
     },
 
     renewLogin: function () {

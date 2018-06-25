@@ -27,6 +27,12 @@ func (auth AuthInfo) ListLDAPGroups() ([]LDAPGroup, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// if there are no ldap groups, return an empty slice
+	if resp == nil || resp.Data == nil {
+		return []LDAPGroup{}, nil
+	}
+
 	raw, ok := resp.Data["keys"].([]interface{})
 	if !ok {
 		return nil, errors.New("Failed to fetch LDAP group names")
@@ -45,12 +51,21 @@ func (auth AuthInfo) ListLDAPGroups() ([]LDAPGroup, error) {
 		results[i] = LDAPGroup{
 			Name: group,
 		}
+
 		// fetch group's policies
 		resp, err := logical.Read("auth/ldap/groups/" + group)
 		if err == nil && resp != nil {
-			if policies, ok := resp.Data["policies"]; ok {
-				if p, ok := policies.(string); ok {
-					results[i].Policies = strings.Split(p, ",")
+			if raw, ok := resp.Data["policies"]; ok {
+				// vault v0.8.3 and higher returns an array of strings
+				if policies, ok := raw.([]interface{}); ok {
+					for _, p := range policies {
+						if s, ok := p.(string); ok {
+							results[i].Policies = append(results[i].Policies, s)
+						}
+					}
+				// vault v0.8.2 and lower has a different JSON response
+				} else if policies, ok := raw.(string); ok {
+					results[i].Policies = strings.Split(policies, ",")
 				}
 			}
 		}
@@ -70,6 +85,12 @@ func (auth AuthInfo) ListLDAPUsers() ([]LDAPUser, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// if there are no ldap users, return an empty slice
+	if resp == nil || resp.Data == nil {
+		return []LDAPUser{}, nil
+	}
+
 	raw, ok := resp.Data["keys"].([]interface{})
 	if !ok {
 		return nil, errors.New("Failed to fetch LDAP usernames")
@@ -88,13 +109,23 @@ func (auth AuthInfo) ListLDAPUsers() ([]LDAPUser, error) {
 		results[i] = LDAPUser{
 			Name: user,
 		}
+
 		// fetch user's policies and groups
 		resp, err := logical.Read("auth/ldap/users/" + user)
 		if err != nil || resp == nil {
 			continue
 		}
+
 		if raw, ok := resp.Data["policies"]; ok {
-			if policies, ok := raw.(string); ok {
+			// vault v0.8.3 and higher returns an array of strings
+			if policies, ok := raw.([]interface{}); ok {
+				for _, p := range policies {
+					if s, ok := p.(string); ok {
+						results[i].Policies = append(results[i].Policies, s)
+					}
+				}
+			// vault v0.8.2 and lower has a different JSON response
+			} else if policies, ok := raw.(string); ok {
 				results[i].Policies = strings.Split(policies, ",")
 			}
 		}

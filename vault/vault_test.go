@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/caiyeon/goldfish/config"
-	"github.com/gorilla/securecookie"
+	"github.com/hashicorp/go-uuid"
 	"github.com/hashicorp/vault/api"
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -20,10 +20,40 @@ func TestGoldfishWrapper(t *testing.T) {
 
 	// bootstrap goldfish to vault
 	SetConfig(cfg.Vault)
-	err = StartGoldfishWrapper(wrappingToken)
+	err = Bootstrap(wrappingToken)
 	if err != nil {
 		panic(err)
 	}
+
+	Convey("Testing bootstrap functions", t, func() {
+		Convey("Reusing the server's own token as raw token", func() {
+			temp := vaultToken
+			unbootstrap()
+			err = BootstrapRaw(temp)
+			So(err, ShouldBeNil)
+		})
+		Convey("Bootstrapping via non-approle token", func() {
+			rootAuth := &AuthInfo{ID: "goldfish", Type: "token"}
+
+			// create a non-approle wrapped token
+			temp := true
+			secret, err := rootAuth.CreateToken(
+				&api.TokenCreateRequest{
+					Policies: []string{"default", "goldfish"},
+					Renewable: &temp,
+				},
+				false, "", "5m",
+			)
+
+			So(err, ShouldBeNil)
+			So(secret, ShouldNotBeNil)
+			So(secret.WrapInfo, ShouldNotBeNil)
+
+			unbootstrap()
+			err = Bootstrap(secret.WrapInfo.Token)
+			So(err, ShouldBeNil)
+		})
+	})
 
 	// start unit tests
 	Convey("Testing API wrapper", t, func() {
@@ -60,8 +90,8 @@ func TestGoldfishWrapper(t *testing.T) {
 		// secrets
 		Convey("Writing secrets should work", func() {
 			resp, err := rootAuth.WriteSecret("secret/bulletins/testbulletin",
-				"{\"title\": \"Message title\", \"message\": \"Message body\","+
-					"\"type\": \"is-success\"}",
+				"{\"title\": \"Message title\", \"message\": \"Message body\"," +
+				"\"type\": \"is-success\"}",
 			)
 			So(err, ShouldBeNil)
 			So(resp, ShouldBeNil)
@@ -134,7 +164,7 @@ func TestGoldfishWrapper(t *testing.T) {
 			Convey("Number of accessors should increase", func() {
 				accessors, err := rootAuth.GetTokenAccessors()
 				So(err, ShouldBeNil)
-				So(len(accessors), ShouldEqual, 3)
+				So(len(accessors), ShouldEqual, 4)
 
 				_, err = rootAuth.CreateToken(&api.TokenCreateRequest{}, true, "", "")
 				So(err, ShouldBeNil)
@@ -214,12 +244,14 @@ func TestGoldfishWrapper(t *testing.T) {
 			So(err, ShouldBeNil)
 
 			// generating a new root token
-			otp := base64.StdEncoding.EncodeToString(securecookie.GenerateRandomKey(16))
+			randomBytes, err := uuid.GenerateRandomBytes(16)
+			So(err, ShouldBeNil)
+			otp := base64.StdEncoding.EncodeToString(randomBytes)
 			status, err := GenerateRootInit(otp)
 			So(err, ShouldBeNil)
 			So(status.Progress, ShouldEqual, 0)
 
-			// supplying a fake unseal token
+			// supplying a fake unseal key
 			status, err = GenerateRootUpdate("YWJjZGVmZ2hpamtsbW5vcHFyc3Q=", status.Nonce)
 			So(err, ShouldBeNil)
 			So(status.Progress, ShouldEqual, 1)
@@ -332,6 +364,10 @@ func TestGoldfishWrapper(t *testing.T) {
 			resp, err = (&AuthInfo{ID: "tesla", Pass: "password", Type: "ldap"}).Login()
 			So(err, ShouldBeNil)
 			So(resp, ShouldNotBeNil)
+
+			resp, err = (&AuthInfo{ID: "tesla", Pass: "notpassword", Type: "ldap"}).Login()
+			So(err, ShouldNotBeNil)
+			So(resp, ShouldBeNil)
 		})
 
 		// ldap
@@ -341,11 +377,11 @@ func TestGoldfishWrapper(t *testing.T) {
 			So(resp, ShouldResemble, []LDAPGroup{
 				LDAPGroup{
 					Name:     "engineers",
-					Policies: []string{"default", "foobar"},
+					Policies: []string{"foobar"},
 				},
 				LDAPGroup{
 					Name:     "scientists",
-					Policies: []string{"bar", "default", "foo"},
+					Policies: []string{"bar", "foo"},
 				},
 			})
 
@@ -354,7 +390,7 @@ func TestGoldfishWrapper(t *testing.T) {
 			So(resp2, ShouldResemble, []LDAPUser{
 				LDAPUser{
 					Name:     "tesla",
-					Policies: []string{"default", "zoobar"},
+					Policies: []string{"zoobar"},
 					Groups:   []string{"engineers"},
 				},
 			})
